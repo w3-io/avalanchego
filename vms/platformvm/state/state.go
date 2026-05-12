@@ -1910,9 +1910,9 @@ func (s *State) loadCurrentValidators() error {
 			return fmt.Errorf("failed loading validator transaction txID %s, %w", txID, err)
 		}
 
-		stakerTx, ok := tx.Unsigned.(txs.Staker)
+		stakerTx, ok := tx.Unsigned.(txs.BoundedStaker)
 		if !ok {
-			return fmt.Errorf("expected tx type txs.Staker but got %T", tx.Unsigned)
+			return fmt.Errorf("expected tx type txs.BoundedStaker but got %T", tx.Unsigned)
 		}
 
 		metadataBytes := validatorIt.Value()
@@ -1961,9 +1961,9 @@ func (s *State) loadCurrentValidators() error {
 			return err
 		}
 
-		stakerTx, ok := tx.Unsigned.(txs.Staker)
+		stakerTx, ok := tx.Unsigned.(txs.BoundedStaker)
 		if !ok {
-			return fmt.Errorf("expected tx type txs.Staker but got %T", tx.Unsigned)
+			return fmt.Errorf("expected tx type txs.BoundedStaker but got %T", tx.Unsigned)
 		}
 
 		metadataBytes := subnetValidatorIt.Value()
@@ -2016,9 +2016,9 @@ func (s *State) loadCurrentValidators() error {
 				return err
 			}
 
-			stakerTx, ok := tx.Unsigned.(txs.Staker)
+			stakerTx, ok := tx.Unsigned.(txs.BoundedStaker)
 			if !ok {
-				return fmt.Errorf("expected tx type txs.Staker but got %T", tx.Unsigned)
+				return fmt.Errorf("expected tx type txs.BoundedStaker but got %T", tx.Unsigned)
 			}
 
 			metadataBytes := delegatorIt.Value()
@@ -2087,7 +2087,7 @@ func (s *State) loadPendingValidators() error {
 
 			stakerTx, ok := tx.Unsigned.(txs.ScheduledStaker)
 			if !ok {
-				return fmt.Errorf("expected tx type txs.Staker but got %T", tx.Unsigned)
+				return fmt.Errorf("expected tx type txs.ScheduledStaker but got %T", tx.Unsigned)
 			}
 
 			staker, err := NewPendingStaker(txID, stakerTx)
@@ -2122,7 +2122,7 @@ func (s *State) loadPendingValidators() error {
 
 			stakerTx, ok := tx.Unsigned.(txs.ScheduledStaker)
 			if !ok {
-				return fmt.Errorf("expected tx type txs.Staker but got %T", tx.Unsigned)
+				return fmt.Errorf("expected tx type txs.ScheduledStaker but got %T", tx.Unsigned)
 			}
 
 			staker, err := NewPendingStaker(txID, stakerTx)
