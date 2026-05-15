@@ -1,22 +1,39 @@
-# RPM Packaging for AvalancheGo
+# Linux Packaging for AvalancheGo
 
 ## Overview
 
-Ship signed RPM packages for avalanchego and subnet-evm targeting
-RHEL 9.x customers. Packages are built inside a Rocky Linux 9 container
-(glibc 2.34), signed with GPG, and published as GitHub Actions artifacts.
+Ship signed Linux packages for `avalanchego` and `subnet-evm`:
+
+- RPM packages for RHEL 9.x customers
+- DEB packages for Ubuntu customers
+
+Packages are built with `nfpm` inside per-format containers, signed with
+GPG, and published as GitHub Actions artifacts on non-PR runs. DEB
+release builds also publish Ubuntu S3 assets.
 
 ## Decisions
 
-- **Target distro:** RHEL 9.4 (glibc 2.34). Container base image:
-  `rockylinux:9`. Bazel hermetic toolchain target: `gnu.2.34`.
-- **Target architectures:** x86_64 and aarch64.
+- **Package formats:** RPM and DEB are built through the same Taskfile
+  and shared packaging scripts, with format-specific `nfpm`
+  configuration files.
+- **Target distros:** RPM builds target RHEL 9.x compatibility with a
+  Rocky Linux 9 container (`rockylinux:9`, glibc 2.34). DEB builds use an
+  Ubuntu 22.04 container (`ubuntu:22.04`).
+- **Target architectures:** RPM uses `x86_64` and `aarch64`; DEB uses
+  `amd64` and `arm64`.
 - **Binary linking:** Dynamic linking against glibc (not static musl).
   See [Binary Linking](#binary-linking) for analysis.
 
 ## Packaging
 
-### Packages
+### Build tooling
+
+Packages are built with [nfpm](https://nfpm.goreleaser.com/) inside
+format-specific containers. The build is orchestrated by
+`.github/packaging/Taskfile.yml`, included from the root Taskfile as
+`packaging:`, and uses shared scripts under `.github/packaging/scripts/`.
+
+### RPM packages
 
 Two RPM packages:
 
@@ -26,21 +43,44 @@ Two RPM packages:
 | subnet-evm | `/var/opt/avalanchego/plugins/<VM_ID>` |
 
 Both declare `glibc >= 2.34` as a dependency. The subnet-evm plugin
-path uses the VM ID from `graft/subnet-evm/scripts/constants.sh`.
+path uses the VM ID from `graft/subnet-evm/scripts/default-vm-data.sh`
+(with a fallback to grepping `constants.sh` on tags that predate the
+dedicated data file).
 
-### Build tooling
+### DEB packages
 
-Packages are built with [nfpm](https://nfpm.goreleaser.com/) inside a
-Rocky Linux 9 container. The build is orchestrated by a Taskfile at
-`.github/packaging/Taskfile.yml`, included from the root Taskfile as
-`packaging:`.
+Two DEB packages:
+
+| Package | Install path |
+|---------|-------------|
+| avalanchego | `/usr/local/bin/avalanchego` |
+| subnet-evm | `/usr/local/lib/avalanchego/plugins/<VM_ID>` |
+
+Both declare `libc6 (>= 2.34)` as a dependency. The subnet-evm plugin
+path uses the VM ID from `graft/subnet-evm/scripts/default-vm-data.sh`
+(with a fallback to grepping `constants.sh` on tags that predate the
+dedicated data file).
 
 ### GPG signing
 
-RPMs are always signed. In CI, a real GPG key is provided via
-`secrets.RPM_GPG_PRIVATE_KEY`. For local builds, an ephemeral GPG key
-(RSA 4096, no passphrase, 1-day expiry) is generated to exercise the
-signing pipeline without requiring a real key.
+RPMs and DEBs are always signed. In CI release builds, a real GPG key is
+provided by GitHub Actions secrets. For local builds and PR validation,
+an ephemeral GPG key (RSA 4096, no passphrase, 1-day expiry) is
+generated to exercise the signing pipeline without requiring a real key.
+Release events (tag push and `workflow_dispatch`) fail fast in
+`workflow-setup-packaging.sh` if no signing-key secret is configured, so
+a misconfigured release cannot silently fall back to the ephemeral key.
+
+RPMs are signed inline by `nfpm` via the `rpm.signature.key_file`
+configuration in `.github/packaging/nfpm/*-rpm.yml`.
+
+DEBs are signed inline by `nfpm` via the `deb.signature.key_file`
+configuration in `.github/packaging/nfpm/*-deb.yml`. The signature is
+written as a detached GPG signature in the `_gpgorigin` ar member,
+covering the concatenation of `debian-binary`, the control archive, and
+the data archive in ar-member order. Validation runs `gpg --verify`
+against that concatenation; no post-build or distro-specific signing
+tool is involved.
 
 ### Version smoke test
 
@@ -48,52 +88,81 @@ The `--version` output format is
 `avalanchego/1.14.1 [database=v1.4.5, rpcchainvm=44, commit=abcd1234, ...]`.
 The version comes from compiled constants (`version/constants.go`),
 not the git tag, so it may not match RC tags. The smoke test verifies:
-- Output starts with `avalanchego/` (binary runs)
-- Output contains `commit=` followed by the git commit hash captured
+- `avalanchego --version` output starts with `avalanchego/` (binary runs)
+- `avalanchego --version` output contains the git commit hash captured
   during the build (correct source was compiled)
+- The subnet-evm plugin is installed at the VM ID path, is executable,
+  and its `--version` output contains the same git commit hash
 
 ### CI workflow
 
-`.github/workflows/build-rpm-release.yml` triggers on tag push,
-`workflow_dispatch`, and `pull_request` (for paths under `.github/packaging/`
-and the workflow file itself). On PRs, the full build runs as a smoke test
-with an ephemeral GPG key and synthetic tag. Matrix strategy covers x86_64 and
-aarch64. Steps:
+`.github/workflows/build-rpm-release.yml` and
+`.github/workflows/build-deb-release.yml` trigger on tag push,
+`workflow_dispatch`, and `pull_request` for packaging paths. On PRs, the
+full builds run as smoke tests with ephemeral GPG keys and synthetic tags.
 
-1. Build and validate RPMs via `scripts/run_task.sh packaging:test-build-rpms`
-   (builds both packages, then validates in a fresh `rockylinux:9`
-   container: signature verification, installation, smoke test)
-2. Upload RPMs and GPG public key as GitHub artifacts
+Both workflows invoke the build via
+`scripts/run_task.sh --taskfile .github/packaging/Taskfile.yml <task>`.
+Locally, the same tasks are reachable as `task packaging:<task>` because
+the root Taskfile includes the packaging Taskfile under that namespace.
+
+RPM workflow:
+
+1. Run `test-build-rpms` (builds both packages, then validates in a fresh
+   `rockylinux:9` container: signature verification, installation, smoke
+   test)
+2. Upload RPMs and GPG public key as GitHub artifacts on non-PR runs
+
+DEB workflow:
+
+1. Run `test-build-debs` (builds both packages, then validates in fresh
+   `ubuntu:22.04` and `ubuntu:24.04` containers: signature verification,
+   installation, smoke test)
+2. Upload DEBs and the exported GPG public key as artifacts on non-PR runs
+3. Upload release artifacts to S3 on tag push and `workflow_dispatch`:
+   `.deb` files go under `linux/debs/ubuntu/{jammy,noble}/{arch}/`; the
+   GPG public key goes one level above, at
+   `linux/debs/ubuntu/{jammy,noble}/`, since one signing key serves all
+   architectures of a given release.
 
 ### Architecture mapping
+
+RPM mapping:
 
 | `uname -m` | Docker `TARGETARCH` | RPM arch |
 |-------------|-------------------|----------|
 | `x86_64` | `amd64` | `x86_64` |
 | `arm64` / `aarch64` | `arm64` | `aarch64` |
 
-The Taskfile maps `uname -m` to RPM arch names. The Dockerfile uses
-Docker's `TARGETARCH` (Go-style) for the Go download URL.
+DEB mapping:
+
+| `uname -m` | Docker `TARGETARCH` | DEB arch |
+|-------------|-------------------|----------|
+| `x86_64` | `amd64` | `amd64` |
+| `arm64` / `aarch64` | `arm64` | `arm64` |
+
+The Taskfile maps `uname -m` to package-format arch names. Dockerfiles
+use Docker's `TARGETARCH` (Go-style) for the Go download URL.
 
 ## Binary Linking
 
 ### Problem Statement
 
-We need to ship RPMs for RHEL/Fedora/Rocky, but CI builds and tests on
-Ubuntu. Different distros ship different glibc versions, so a
-dynamically-linked Ubuntu binary may not run on RHEL. CI tests on
-`ubuntu-latest` (Ubuntu 24.04, glibc 2.39). Target RPM distros could
-range from RHEL 8 (glibc 2.28) to RHEL 9 (glibc 2.34). A binary linked
-against glibc 2.39 would not run on either.
+We need to ship Linux packages for RHEL/Rocky and Ubuntu, while general
+CI runs mostly on Ubuntu. Different distros ship different glibc
+versions, so a dynamically-linked Ubuntu binary may not run on older
+target distros. A binary linked on Ubuntu 24.04 (glibc 2.39) would not
+run on RHEL 9 (glibc 2.34), and may not run on Ubuntu 22.04 (glibc
+2.35).
 
 ### Proposed Solution
 
 Build dynamically-linked binaries against the target glibc version using
 container builds as a stopgap, with Bazel hermetic toolchains as the
 target solution. Minimize investment in pre-Bazel linking workarounds —
-the container approach is acceptable for shipping RPMs now. Do not adopt
-static musl compilation without a performance test suite that would
-catch regressions.
+the container approach is acceptable for shipping Linux packages now. Do
+not adopt static musl compilation without a performance test suite that
+would catch regressions.
 
 ### Why dynamic glibc
 
@@ -116,17 +185,18 @@ catch regressions.
 
 ### Portability via container builds (stopgap)
 
-Build inside a container matching the target glibc version (e.g.,
-`rockylinux:9` for glibc 2.34). GitHub Actions' `container:` directive makes
-this straightforward. This has a testing gap: CI currently tests on
-`ubuntu-latest` (glibc 2.39), so RPMs built in an older container include an
-effectively different and untested binary. To truly "test what we ship," CI
-would need to also run tests inside the same older-glibc container,
-potentially doubling CI overhead. For now, this testing gap is probably
-acceptable. RPM smoke tests validate that the binary loads and runs correctly
-on the target platform. Full e2e testing on the target glibc is likely not
-worth the effort until Bazel enables testing against the same glibc version
-used for the release build.
+Build inside a container matching the target glibc version: `rockylinux:9`
+for RPMs and `ubuntu:22.04` for DEBs. The packaging Taskfile runs these
+builder containers with Docker. This has a testing gap: CI commonly runs
+on Ubuntu 24.04 (glibc 2.39), so packages built in an older container can
+have a different glibc floor than binaries built directly on the runner.
+To truly "test what we ship," CI would need to also run tests inside the
+same older-glibc container, potentially doubling CI overhead. For now,
+this testing gap is probably acceptable. Package smoke tests validate
+that the binary loads and runs correctly on the target platform. Full e2e
+testing on the target glibc is likely not worth the effort until Bazel
+enables testing against the same glibc version used for the release
+build.
 
 ### Bazel hermetic toolchain (target solution)
 
