@@ -14,6 +14,20 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # - On PR runs, BAZEL_IMPACTED_BASE_SHA is set to enable jobs to target only Bazel
+  # targets impacted by the changes between BASE_SHA and the PR branch. In the event
+  # that a PR run gives a false-negative due to e.g an environmental dependency, the
+  # merge run should catch it.
+  #
+  # - On merge queue and post-merge runs, BAZEL_IMPACTED_BASE_SHA is not set. This
+  # ensures that jobs run against all Bazel targets regardless of what changed to
+  # avoid false-negatives e.g. due to an environmental dependency.
+  #
+  # - Jobs relying on BAZEL_IMPACTED_BASE_SHA must set `fetch-depth: 0` for
+  # actions/checkout to ensure the history includes both the PR merge commit and the
+  # base commit to compare against.
+  # TODO(marun) Maybe this should be conditional?
+  BAZEL_IMPACTED_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
 
 permissions:
   contents: read
@@ -71,6 +85,8 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Ensure sufficient history for bazel diff
       - name: Run unit tests with Bazel
         uses: ./.github/actions/run-bazel-task
         with:
@@ -82,6 +98,8 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Ensure sufficient history for bazel diff
       - name: Run coreth unit tests with Bazel
         uses: ./.github/actions/run-bazel-task
         with:
@@ -93,6 +111,8 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Ensure sufficient history for bazel diff
       - name: Run subnet-evm unit tests with Bazel
         uses: ./.github/actions/run-bazel-task
         with:
