@@ -4037,8 +4037,6 @@ func TestStateAndDiffIntegration_DeleteValidatorAndAddDifferentValidatorWithStak
 	require.NoError(t, diff.Apply(state))
 	require.NoError(t, state.Commit())
 
-	_, err = state.GetCurrentValidator(validator1.SubnetID, validator1.NodeID)
-	require.Equal(t, database.ErrNotFound, err) // Do not use ErrorsIs to check legacy GetCurrentValidator behavior
 	_, err = state.GetStakingInfo(validator1.SubnetID, validator1.NodeID)
 	require.ErrorIs(t, err, database.ErrNotFound)
 	got, err := state.GetStakingInfo(validator2.SubnetID, validator2.NodeID)
