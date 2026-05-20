@@ -2851,7 +2851,7 @@ func (s *State) writeCurrentStakers(codecVersion uint16) error {
 				// If we are not performing a replacement, we should not try to update staking info because
 				// this no longer exists.
 				if validatorDiff.added == nil {
-					delete(s.modifiedStakingInfo[subnetID], nodeID) // TODO this is not tested
+					delete(s.modifiedStakingInfo[subnetID], nodeID)
 				}
 			}
 			if validatorDiff.added != nil {
@@ -2896,7 +2896,7 @@ func (s *State) writeCurrentStakers(codecVersion uint16) error {
 	}
 
 	// Clear the diff now that we have flushed its changes
-	maps.Clear(s.modifiedStakingInfo) // TODO this is not tested
+	maps.Clear(s.modifiedStakingInfo)
 
 	if err := s.validatorState.WriteValidatorMetadata(
 		s.currentValidatorList,
