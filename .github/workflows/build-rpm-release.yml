@@ -13,6 +13,7 @@ on:
     paths:
       - ".github/packaging/**"
       - ".github/workflows/build-rpm-release.yml"
+      - ".github/workflows/upload-pkg-s3.yml"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -31,6 +32,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    outputs:
+      tag: ${{ steps.setup.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v5
@@ -96,3 +99,22 @@ jobs:
           rm -rf build/rpm
           sudo rm -rf build/gpg
         shell: bash
+
+  # Release-only S3 upload. Delegates to the shared upload-pkg-s3
+  # workflow so id-token: write stays scoped to that workflow's job —
+  # never granted to a job that checks out a tag tree and runs
+  # packaging scripts.
+  upload-rpms-s3:
+    needs: build-rpm
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/upload-pkg-s3.yml
+    with:
+      pkg-format: rpm
+      tag: ${{ needs.build-rpm.outputs.tag }}
+      arches: '["x86_64","aarch64"]'
+      packages: 'avalanchego subnet-evm'
+      distros: 'el9'
+      s3-prefix: linux/rpms/rhel
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_DEPLOY_SA_ROLE_ARN }}
+      BUCKET: ${{ secrets.BUCKET }}
