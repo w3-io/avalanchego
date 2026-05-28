@@ -471,6 +471,86 @@ the set of **impacted targets**: Bazel targets whose definition or transitive
 inputs are affected by the change between the two revisions. `bazel-diff` is
 one candidate implementation of this model.
 
+#### Intended architecture: diff-range-driven selective execution
+
+Selective Bazel test execution should be treated as a layer **above** the
+ordinary Bazel test targets, not as a replacement for them.
+
+- The ordinary Bazel targets remain the source of truth for what can be built
+  and tested.
+- A higher-level selective-testing layer determines which subset of those test
+  targets is relevant for a particular git diff.
+- Local developers can still run the full Bazel target sets directly when they
+  want exhaustive validation.
+- CI and local workflows can use the selective-testing layer to reduce work when
+  only part of the graph is affected.
+
+The intended user-facing interface for this layer is **`targeted-bazel`**. It
+accepts normal Bazel-style invocations and only changes behavior when diff-aware
+selection is enabled. In other words:
+
+- without a diff input, `targeted-bazel ...` should behave like plain `bazel ...`
+- with a diff input, `targeted-bazel --diff <range> ...` should narrow the
+  requested Bazel target set to the impacted subset selected by policy
+
+This keeps the selective layer close to ordinary Bazel usage instead of forcing
+callers to learn a separate partition-specific command shape.
+
+`targeted-bazel` is the intended command surface. The lower-level impacted-target
+machinery exists to support that behavior and may evolve, but task entrypoints
+and user-facing documentation should center `targeted-bazel` rather than the
+implementation details behind it.
+
+The core abstraction for this layer is a **git diff range**.
+
+Examples:
+
+- `origin/master..HEAD` - committed changes on the current branch
+- `origin/master..` - committed changes plus the current working tree
+- `HEAD^..` - the previous revision through the current working tree
+
+Open-ended ranges are interpreted as comparing the left-hand revision against
+`HEAD` plus any staged and unstaged working-tree changes.
+
+The intended responsibility split is:
+
+- **Outside Bazel:** choose the git diff range to analyze.
+  - Examples: CI may choose a branch-delta range for a rebased PR branch, while
+    a developer may choose `origin/master..` locally.
+  - This is workflow policy, not impacted-target computation.
+- **Inside Bazel:** given a chosen diff range, compute impacted labels, filter
+  them to the relevant partition, and optionally execute the selected tests.
+
+The main reason to move more of this mechanism into Bazel is not that manifest
+computation is expensive or that caching the manifest is especially important.
+The value is that Bazel gives the mechanism a more explicit structure:
+
+- named inputs
+- a named derived artifact
+- a clear consumer of that artifact
+
+In other words, the selective-testing layer should be understandable as:
+
+```text
+diff range + current workspace + selector machinery
+  -> selected-test manifest
+  -> test execution
+```
+
+This makes the interface explicit instead of leaving it as workflow glue hidden
+inside scripts. The important derived artifact is the **selected-test
+manifest**. If selector machinery changes, the manifest must be recomputed. If
+that recomputation produces the same manifest, the required test execution does
+not change. If it produces a different manifest, the selected tests change.
+
+This separation keeps the contract clear:
+
+- the caller decides **what diff range** should be analyzed
+- the Bazel-owned selective-testing layer decides **which Bazel targets** that
+  diff range impacts
+- the ordinary Bazel test targets remain directly runnable without selective
+  filtering
+
 Example output is a newline-delimited list of Bazel labels:
 
 ```text
@@ -509,12 +589,28 @@ comparison modes and they answer slightly different questions:
 The intended local workflow is therefore:
 
 1. choose the comparison mode that matches the question you are asking
-2. choose a base revision for that mode (for local branch-delta work this is
-   usually `git merge-base origin/master HEAD`)
-3. compute impacted Bazel targets between the base revision and the current
-   checkout or synthetic merge result
-4. filter that target set to the relevant test targets or CI partition
-5. run only those tests
+2. choose a git diff range for that mode (for local branch-delta work this is
+   usually the branch fork-point through the current checkout or working tree)
+3. run the normal Bazel command through `targeted-bazel`
+4. let the selector narrow that requested target set when a diff is provided
+5. otherwise let the command pass through unchanged as ordinary `bazel`
+
+For example:
+
+```bash
+# Plain bazel-style execution
+ targeted-bazel test //graft/coreth/... //graft/evm/...
+
+# Diff-aware execution against the same requested Bazel scope
+ targeted-bazel --diff origin/master.. test //graft/coreth/... //graft/evm/...
+```
+
+In the current rollout, the same task entrypoints can be used in both places:
+
+- **Locally:** if `BAZEL_IMPACTED_BASE_SHA` and `BAZEL_IMPACTED_DIFF_RANGE` are
+  unset, `targeted-bazel` behaves like ordinary `bazel`.
+- **In CI:** those env vars can be set to enable selective execution against a
+  chosen diff range without changing the task shape.
 
 This keeps local validation and CI behavior aligned without pretending that
 branch-delta and merged-result comparisons are interchangeable.
@@ -609,9 +705,11 @@ baseline.
 #### Current behavior
 
 - Pull-request runs for the three Bazel unit partitions (`unit-main`,
-  `unit-coreth`, `unit-subnet-evm`) use impacted-target selection when a
-  trusted base SHA is available, filtered down to non-`manual` `go_test`
-  targets in the relevant partition.
+  `unit-coreth`, `unit-subnet-evm`) invoke `targeted-bazel` with normal Bazel
+  target patterns. When a trusted diff is available, the current selection
+  policy narrows those requests to impacted non-`manual` `go_test` targets
+  within the requested scope. Without a diff, the same task entrypoints behave
+  like plain `bazel test` for that scope.
 - On `pull_request` workflows, GitHub checks out a synthetic merge commit by
   default. In that mode, impacted-target selection compares the current base
   branch tip (`github.event.pull_request.base.sha`) against that synthetic
@@ -639,6 +737,12 @@ Affected-target tooling should be introduced gradually:
 The near-term goal is not perfect selective CI for every Bazel change. The goal
 is a conservative, understandable rollout that reduces unnecessary work without
 weakening merge safety.
+
+Current selector timings on a fast local machine are on the order of ~9-12s per
+invocation, while the affected CI unit partitions are substantially more
+expensive (`main` and `coreth` around 14 minutes, `subnet-evm` around 9
+minutes). That makes the current cost model reasonable for CI-driven selective
+execution even if it is not yet compelling as a default local interactive path.
 
 #### PR minimization vs authoritative merge validation
 

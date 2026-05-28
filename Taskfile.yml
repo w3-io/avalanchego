@@ -74,7 +74,7 @@ tasks:
     cmd: '{{.NIX_RUN}} bazelisk mod tidy'
 
   bazel-print-impacted-targets:
-    desc: Print impacted Bazel targets for the current working tree vs HEAD (or BAZEL_IMPACTED_BASE_SHA)
+    desc: Print impacted Bazel targets for the current working tree vs HEAD (or the diff range implied by BAZEL_IMPACTED_BASE_SHA). This is an implementation/debugging aid; normal task entrypoints should use targeted-bazel.
     cmd: '{{.NIX_RUN}} ./scripts/print_bazel_impacted_targets.sh'
 
   bazel-print-impacted-targets-branch:
@@ -91,8 +91,8 @@ tasks:
     cmd: '{{.NIX_RUN}} bazelisk test //...'
 
   bazel-test-coreth:
-    desc: Run coreth/evm unit tests with Bazel (impacted-only when BAZEL_IMPACTED_BASE_SHA is set)
-    cmd: '{{.NIX_RUN}} ./scripts/run_bazel_impacted_tests.sh --scope //graft/coreth/... --scope //graft/evm/... --fallback-task bazel-test-coreth-full'
+    desc: Run coreth/evm unit tests via targeted-bazel. Locally this behaves like plain bazel unless BAZEL_IMPACTED_BASE_SHA/BAZEL_IMPACTED_DIFF_RANGE is set; CI can set those env vars to enable selective execution.
+    cmd: '{{.NIX_RUN}} go run ./tools/targeted-bazel test //graft/coreth/... //graft/evm/...'
 
   bazel-test-coreth-full:
     desc: Run the full coreth/evm Bazel unit test target set
@@ -121,16 +121,16 @@ tasks:
     cmd: '{{.NIX_RUN}} bazelisk test --config=fast //...'
 
   bazel-test-main:
-    desc: Run main module unit tests with Bazel (excludes graft modules; impacted-only when BAZEL_IMPACTED_BASE_SHA is set)
-    cmd: '{{.NIX_RUN}} ./scripts/run_bazel_impacted_tests.sh --scope "//... except //graft/..." --fallback-task bazel-test-main-full'
+    desc: Run main module unit tests via targeted-bazel (excludes graft modules). Locally this behaves like plain bazel unless BAZEL_IMPACTED_BASE_SHA/BAZEL_IMPACTED_DIFF_RANGE is set; CI can set those env vars to enable selective execution.
+    cmd: '{{.NIX_RUN}} go run ./tools/targeted-bazel test //... -- -//graft/...'
 
   bazel-test-main-full:
     desc: Run the full main-module Bazel unit test target set (excludes graft modules)
     cmd: '{{.NIX_RUN}} bazelisk test //... -- -//graft/...'
 
   bazel-test-subnet-evm:
-    desc: Run subnet-evm unit tests with Bazel (impacted-only when BAZEL_IMPACTED_BASE_SHA is set)
-    cmd: '{{.NIX_RUN}} ./scripts/run_bazel_impacted_tests.sh --scope //graft/subnet-evm/... --fallback-task bazel-test-subnet-evm-full'
+    desc: Run subnet-evm unit tests via targeted-bazel. Locally this behaves like plain bazel unless BAZEL_IMPACTED_BASE_SHA/BAZEL_IMPACTED_DIFF_RANGE is set; CI can set those env vars to enable selective execution.
+    cmd: '{{.NIX_RUN}} go run ./tools/targeted-bazel test //graft/subnet-evm/...'
 
   bazel-test-subnet-evm-full:
     desc: Run the full subnet-evm Bazel unit test target set
