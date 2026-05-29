@@ -1,9 +1,16 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,14 +18,11 @@ import (
 )
 
 const (
-	bazelDiffURL  = "https://github.com/Tinder/bazel-diff/releases/download/v22.0.0/bazel-diff_deploy.jar"
-	bazelDiffHash = "sha256-F7opo1MmvosIVObhv29FA2gq9bBBZfeaPn+96apq5uY="
+	bazelDiffURL     = "https://github.com/Tinder/bazel-diff/releases/download/v22.0.0/bazel-diff_deploy.jar"
+	bazelDiffHash    = "sha256-F7opo1MmvosIVObhv29FA2gq9bBBZfeaPn+96apq5uY="
+	bazelDiffSubdir  = "impactedtests/bazel-diff"
+	bazelDiffJarName = "bazel-diff_deploy.jar"
 )
-
-type prefetchedFile struct {
-	Hash      string `json:"hash"`
-	StorePath string `json:"storePath"`
-}
 
 func impactedLabels(ctx context.Context, rangeArg string) ([]string, error) {
 	repoRoot, err := gitOutput(ctx, "rev-parse", "--show-toplevel")
@@ -60,7 +64,11 @@ func impactedLabels(ctx context.Context, rangeArg string) ([]string, error) {
 	if err := runGit(ctx, repoRoot, "worktree", "add", "--detach", basePath, diff.baseRev); err != nil {
 		return nil, fmt.Errorf("create base worktree: %w", err)
 	}
-	defer runGit(ctx, repoRoot, "worktree", "remove", "--force", basePath)
+	defer func() {
+		if err := runGit(ctx, repoRoot, "worktree", "remove", "--force", basePath); err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: remove base worktree %s: %v\n", basePath, err)
+		}
+	}()
 
 	headPath := repoRoot
 	if !diff.includeWorkingTree {
@@ -68,7 +76,11 @@ func impactedLabels(ctx context.Context, rangeArg string) ([]string, error) {
 		if err := runGit(ctx, repoRoot, "worktree", "add", "--detach", headPath, diff.headRev); err != nil {
 			return nil, fmt.Errorf("create head worktree: %w", err)
 		}
-		defer runGit(ctx, repoRoot, "worktree", "remove", "--force", headPath)
+		defer func() {
+			if err := runGit(ctx, repoRoot, "worktree", "remove", "--force", headPath); err != nil {
+				fmt.Fprintf(os.Stderr, "WARNING: remove head worktree %s: %v\n", headPath, err)
+			}
+		}()
 	}
 
 	baseHashes := filepath.Join(scratchDir, "base-hashes.json")
@@ -138,31 +150,116 @@ func queryScopedGoTests(ctx context.Context, dir string, scopes []string) ([]str
 }
 
 func prefetchBazelDiff(ctx context.Context) (string, error) {
-	output, err := commandOutput(ctx, "", "nix", "store", "prefetch-file", "--json", bazelDiffURL)
-	if err != nil {
-		return "", fmt.Errorf("prefetch bazel-diff: %w", err)
+	if jarPath := os.Getenv("BAZEL_DIFF_JAR"); jarPath != "" {
+		if err := validateBazelDiffFile(jarPath); err != nil {
+			return "", fmt.Errorf("validate bazel-diff jar %q: %w", jarPath, err)
+		}
+		return jarPath, nil
 	}
 
-	var prefetched prefetchedFile
-	if err := json.Unmarshal([]byte(output), &prefetched); err != nil {
-		return "", fmt.Errorf("parse bazel-diff prefetch metadata: %w", err)
+	cacheDir, err := bazelDiffCacheDir()
+	if err != nil {
+		return "", err
 	}
-	if prefetched.Hash != bazelDiffHash {
-		return "", fmt.Errorf("unexpected bazel-diff hash %q", prefetched.Hash)
+	jarPath := filepath.Join(cacheDir, bazelDiffJarName)
+	if err := validateBazelDiffFile(jarPath); err == nil {
+		return jarPath, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(jarPath)
 	}
-	if prefetched.StorePath == "" {
-		return "", fmt.Errorf("missing bazel-diff store path")
+
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return "", fmt.Errorf("create bazel-diff cache dir: %w", err)
 	}
-	return prefetched.StorePath, nil
+
+	tmpFile, err := os.CreateTemp(cacheDir, bazelDiffJarName+".*")
+	if err != nil {
+		return "", fmt.Errorf("create bazel-diff temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if err := downloadFile(ctx, bazelDiffURL, tmpFile); err != nil {
+		_ = tmpFile.Close()
+		return "", fmt.Errorf("download bazel-diff: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("close bazel-diff temp file: %w", err)
+	}
+	if err := validateBazelDiffFile(tmpPath); err != nil {
+		return "", fmt.Errorf("validate downloaded bazel-diff: %w", err)
+	}
+	if err := os.Rename(tmpPath, jarPath); err != nil {
+		return "", fmt.Errorf("install bazel-diff jar: %w", err)
+	}
+	return jarPath, nil
+}
+
+func bazelDiffCacheDir() (string, error) {
+	if cacheDir := os.Getenv("BAZEL_DIFF_CACHE_DIR"); cacheDir != "" {
+		return cacheDir, nil
+	}
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user cache dir: %w", err)
+	}
+	return filepath.Join(userCacheDir, bazelDiffSubdir), nil
+}
+
+func downloadFile(ctx context.Context, url string, file *os.File) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %s", response.Status)
+	}
+	_, err = io.Copy(file, response.Body)
+	return err
+}
+
+func validateBazelDiffFile(path string) error {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	wantHash, err := decodeSRIHash(bazelDiffHash)
+	if err != nil {
+		return err
+	}
+	gotHash := sha256.Sum256(contents)
+	if !strings.EqualFold(base64.StdEncoding.EncodeToString(gotHash[:]), base64.StdEncoding.EncodeToString(wantHash)) {
+		return fmt.Errorf("unexpected bazel-diff hash %q", "sha256-"+base64.StdEncoding.EncodeToString(gotHash[:]))
+	}
+	return nil
+}
+
+func decodeSRIHash(hash string) ([]byte, error) {
+	algorithm, encoded, ok := strings.Cut(hash, "-")
+	if !ok {
+		return nil, fmt.Errorf("invalid SRI hash %q", hash)
+	}
+	if algorithm != "sha256" {
+		return nil, fmt.Errorf("unsupported SRI hash algorithm %q", algorithm)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode SRI hash %q: %w", hash, err)
+	}
+	return decoded, nil
 }
 
 func runBazelDiff(ctx context.Context, jarPath string, args ...string) error {
-	if javaPath, err := exec.LookPath("java"); err == nil {
-		_, err = commandOutput(ctx, "", javaPath, append([]string{"-jar", jarPath}, args...)...)
-		return err
+	javaPath, err := exec.LookPath("java")
+	if err != nil {
+		return fmt.Errorf("find java: %w", err)
 	}
-
-	_, err := commandOutput(ctx, "", "nix", append([]string{"run", "nixpkgs#jdk_headless", "--", "-jar", jarPath}, args...)...)
+	_, err = commandOutput(ctx, "", javaPath, append([]string{"-jar", jarPath}, args...)...)
 	return err
 }
 

@@ -1,3 +1,6 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
 import (
@@ -6,16 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-)
-
-var (
-	builtBinaryPath string
-	buildBinaryOnce sync.Once
-	buildBinaryErr  error
 )
 
 func TestManifestNoChanges(t *testing.T) {
@@ -59,28 +55,18 @@ func repoRootForTest(t *testing.T) string {
 
 func buildToolForTest(t *testing.T, repoRoot string) string {
 	t.Helper()
-	buildBinaryOnce.Do(func() {
-		binaryDir, err := os.MkdirTemp("", "impactedtests-bin-")
-		if err != nil {
-			buildBinaryErr = err
-			return
-		}
-		builtBinaryPath = filepath.Join(binaryDir, "impactedtests")
-		cmd := exec.Command("go", "build", "-o", builtBinaryPath, "./tools/impactedtests")
-		cmd.Dir = repoRoot
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			buildBinaryErr = execError("build impactedtests binary", err, output)
-		}
-	})
-	require.NoError(t, buildBinaryErr)
-	return builtBinaryPath
+	binaryDir := t.TempDir()
+	binaryPath := filepath.Join(binaryDir, "impactedtests")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./tools/impactedtests")
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, execError("build impactedtests binary", err, output))
+	return binaryPath
 }
 
 func addWorktreeForTest(t *testing.T, repoRoot string) string {
 	t.Helper()
-	worktree, err := os.MkdirTemp("", "impactedtests-worktree-")
-	require.NoError(t, err)
+	worktree := t.TempDir()
 	runInDirForTest(t, repoRoot, "git", "worktree", "add", "--detach", worktree, "HEAD")
 	t.Cleanup(func() {
 		runInDirForTest(t, repoRoot, "git", "worktree", "remove", "--force", worktree)

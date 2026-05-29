@@ -1,20 +1,9 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
-import "fmt"
-
-var partitions = map[string]string{
-	"main":       "//... except //graft/...",
-	"coreth":     "//graft/coreth/... union //graft/evm/...",
-	"subnet-evm": "//graft/subnet-evm/...",
-}
-
-func partitionDefinition(name string) (string, error) {
-	definition, ok := partitions[name]
-	if !ok {
-		return "", fmt.Errorf("unknown partition %q", name)
-	}
-	return definition, nil
-}
+import "strings"
 
 func filterManifest(impacted []string, partitionTests []string) []string {
 	partitionSet := make(map[string]struct{}, len(partitionTests))
@@ -36,9 +25,10 @@ func formatManifest(labels []string) string {
 		return ""
 	}
 
-	output := ""
+	var output strings.Builder
 	for _, label := range labels {
-		output += label + "\n"
+		output.WriteString(label)
+		output.WriteByte('\n')
 	}
-	return output
+	return output.String()
 }

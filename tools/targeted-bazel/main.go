@@ -1,3 +1,6 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
 import (
@@ -9,7 +12,10 @@ import (
 	"strings"
 )
 
-const policyAuto = "auto"
+const (
+	policyAuto       = "auto"
+	bazelTestCommand = "test"
+)
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -32,11 +38,11 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "ERROR: bazel subcommand required")
 		return 2
 	}
-	if bazelArgs[0] != "test" && config.policy == policyAuto {
-		fmt.Fprintf(os.Stderr, "WARNING: --diff with policy %q currently supports only 'test'; passing through %q unchanged\n", config.policy, bazelArgs[0])
+	if bazelArgs[0] != bazelTestCommand && config.policy == policyAuto {
+		fmt.Fprintf(os.Stderr, "WARNING: --diff with policy %q currently supports only %q; passing through %q unchanged\n", config.policy, bazelTestCommand, bazelArgs[0])
 		return execBazel(bazelArgs)
 	}
-	if bazelArgs[0] != "test" {
+	if bazelArgs[0] != bazelTestCommand {
 		fmt.Fprintf(os.Stderr, "ERROR: policy %q does not support bazel command %q\n", config.policy, bazelArgs[0])
 		return 2
 	}
@@ -61,7 +67,7 @@ func run(args []string) int {
 		return 0
 	}
 
-	filteredArgs := append([]string{"test"}, invocation.preTargetArgs...)
+	filteredArgs := append([]string{bazelTestCommand}, invocation.preTargetArgs...)
 	filteredArgs = append(filteredArgs, selectedTargets...)
 	if len(invocation.postDashArgs) > 0 {
 		filteredArgs = append(filteredArgs, "--")
@@ -87,7 +93,7 @@ func parseArgs(args []string) (config, []string, error) {
 		switch {
 		case args[0] == "--diff":
 			if len(args) < 2 {
-				return config{}, nil, fmt.Errorf("--diff requires a value")
+				return config{}, nil, errors.New("--diff requires a value")
 			}
 			cfg.diffRange = args[1]
 			args = args[2:]
@@ -96,7 +102,7 @@ func parseArgs(args []string) (config, []string, error) {
 			args = args[1:]
 		case args[0] == "--policy":
 			if len(args) < 2 {
-				return config{}, nil, fmt.Errorf("--policy requires a value")
+				return config{}, nil, errors.New("--policy requires a value")
 			}
 			cfg.policy = args[1]
 			args = args[2:]
@@ -127,8 +133,8 @@ func diffRangeFromEnv() string {
 }
 
 func parseTestInvocation(args []string) (testInvocation, error) {
-	if len(args) == 0 || args[0] != "test" {
-		return testInvocation{}, fmt.Errorf("expected bazel test invocation")
+	if len(args) == 0 || args[0] != bazelTestCommand {
+		return testInvocation{}, errors.New("expected bazel test invocation")
 	}
 
 	invocation := testInvocation{}
@@ -166,11 +172,7 @@ func selectTargets(diffRange string, command string, targetPatterns []string, po
 		return nil, fmt.Errorf("resolve repo root: %w", err)
 	}
 
-	args := []string{"run", filepath.Join(repoRoot, "tools", "impactedtests"), "select", "--range", diffRange, "--command", command, "--policy", policy}
-	for _, targetPattern := range targetPatterns {
-		args = append(args, "--scope", targetPattern)
-	}
-	cmd := exec.Command("go", args...)
+	cmd := impactedTestsCommand(repoRoot, diffRange, command, targetPatterns, policy)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
@@ -180,6 +182,21 @@ func selectTargets(diffRange string, command string, targetPatterns []string, po
 		return nil, fmt.Errorf("%w: %s", err, trimmed)
 	}
 	return splitLines(strings.TrimSpace(string(output))), nil
+}
+
+func impactedTestsCommand(repoRoot string, diffRange string, command string, targetPatterns []string, policy string) *exec.Cmd {
+	args := make([]string, 0, 7+2*len(targetPatterns))
+	args = append(args, "select", "--range", diffRange, "--command", command, "--policy", policy)
+	for _, targetPattern := range targetPatterns {
+		args = append(args, "--scope", targetPattern)
+	}
+
+	if impactedTestsBin := os.Getenv("IMPACTEDTESTS_BIN"); impactedTestsBin != "" {
+		return exec.Command(impactedTestsBin, args...)
+	}
+
+	goArgs := append([]string{"run", filepath.Join(repoRoot, "tools", "impactedtests")}, args...)
+	return exec.Command("go", goArgs...)
 }
 
 func repoRoot() (string, error) {

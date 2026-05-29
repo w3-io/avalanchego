@@ -1,13 +1,16 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 )
 
 func scopeExpression(scopes []string) (string, error) {
 	if len(scopes) == 0 {
-		return "", fmt.Errorf("at least one --scope is required")
+		return "", errors.New("at least one --scope is required")
 	}
 
 	positives := make([]string, 0, len(scopes))
@@ -15,7 +18,7 @@ func scopeExpression(scopes []string) (string, error) {
 	for _, scope := range scopes {
 		scope = strings.TrimSpace(scope)
 		if scope == "" {
-			return "", fmt.Errorf("scope must not be empty")
+			return "", errors.New("scope must not be empty")
 		}
 		if strings.HasPrefix(scope, "-") {
 			negatives = append(negatives, strings.TrimPrefix(scope, "-"))
@@ -24,7 +27,7 @@ func scopeExpression(scopes []string) (string, error) {
 		positives = append(positives, scope)
 	}
 	if len(positives) == 0 {
-		return "", fmt.Errorf("at least one positive --scope is required")
+		return "", errors.New("at least one positive --scope is required")
 	}
 
 	expr := unionExpression(positives)
@@ -35,9 +38,11 @@ func scopeExpression(scopes []string) (string, error) {
 }
 
 func unionExpression(scopes []string) string {
-	expr := scopes[0]
+	var expr strings.Builder
+	expr.WriteString(scopes[0])
 	for _, scope := range scopes[1:] {
-		expr += " union " + scope
+		expr.WriteString(" union ")
+		expr.WriteString(scope)
 	}
-	return expr
+	return expr.String()
 }

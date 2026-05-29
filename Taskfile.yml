@@ -355,8 +355,11 @@ tasks:
   lint-all:
     desc: Runs all lint checks
     cmds:
-      # Phase 1: Read-only checks (safe to parallelize)
+      # Phase 1: Read-only checks.
       - task: _lint-readonly
+      # Phase 1b: Run the second golangci-lint invocation sequentially to
+      # avoid its process lock contention with lint.
+      - task: lint-saevm
       # Phase 2: Tree-mutating checks (must be sequential to avoid
       # git index and bazel server contention)
       - task: check-yaml-fmt
@@ -372,7 +375,6 @@ tasks:
     internal: true
     deps:
       - lint
-      - lint-saevm
       - lint-action
       - lint-shell
       - check-go-version

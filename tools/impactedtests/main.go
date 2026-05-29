@@ -1,3 +1,6 @@
+// Copyright (C) 2019, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package main
 
 import (
@@ -38,7 +41,7 @@ func run(ctx context.Context, args []string) error {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `usage: impactedtests <subcommand> [options]
+	fmt.Fprint(os.Stderr, `usage: impactedtests <subcommand> [options]
 
 Subcommands:
   labels    Print impacted Bazel labels for a git diff range
@@ -132,5 +135,5 @@ func writeOutput(path string, content string) error {
 		_, err := os.Stdout.WriteString(content)
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return os.WriteFile(path, []byte(content), 0o600)
 }
