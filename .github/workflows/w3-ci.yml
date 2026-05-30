@@ -97,7 +97,9 @@ jobs:
               graft/subnet-evm/params/hooks_libevm.go) ;;
               graft/subnet-evm/params/precompiles_eip2537*.go) ;;
               graft/subnet-evm/params/protocol_params.go) ;;
+              graft/subnet-evm/params/testdata/eip2537/*.json) ;;
               .github/workflows/w3-ci.yml) ;;
+              .gitignore) ;;
               README-w3.md) ;;
               dev/*) ;;
               *)

@@ -62,6 +62,11 @@ tests/upgrade/upgrade.test
 vendor
 
 **/testdata
+# w3 fork: vendored EIP-2537 reference vectors (libevm test suite
+# subset) embedded by precompiles_eip2537_vectors_test.go via
+# go:embed. Must be in-tree, not swept by the generic rule above.
+!graft/subnet-evm/params/testdata/
+!graft/subnet-evm/params/testdata/**
 
 .direnv
 # Personal extension to .envrc
