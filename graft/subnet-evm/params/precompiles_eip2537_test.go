@@ -123,17 +123,18 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 		})
 	}
 
-	// G1MSM at k=1, 2, 5. Formula: k * 12000 * discount(k) / 1000.
-	// Discount table indices are 0-based on k, so discount(k) is
-	// table[k-1]: discount(1)=1200, discount(2)=888, discount(5)=594.
+	// G1MSM at k=1, 2, 5. Formula: k * 12000 * G1_discount(k) / 1000.
+	// Pectra-final G1 discount table (DISTINCT from G2's, and
+	// distinct from libevm's draft table starting at 1200):
+	// discount(1)=1000, discount(2)=949, discount(5)=764.
 	g1MSM := precompiledContractsBLS12381[BLS12381G1MSMAddress]
 	g1MSMCases := []struct {
 		k       uint64
 		wantGas uint64
 	}{
-		{1, (1 * 12000 * 1200) / 1000},
-		{2, (2 * 12000 * 888) / 1000},
-		{5, (5 * 12000 * 594) / 1000},
+		{1, (1 * 12000 * 1000) / 1000},
+		{2, (2 * 12000 * 949) / 1000},
+		{5, (5 * 12000 * 764) / 1000},
 	}
 	for _, c := range g1MSMCases {
 		t.Run("G1MSM/gas/k="+itoa(c.k), func(t *testing.T) {
@@ -144,17 +145,18 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 		})
 	}
 
-	// G2MSM at k=1, 2, 5. Formula: k * 22500 * discount(k) / 1000.
-	// Pectra base is 22500; libevm draft G2MUL base is 55000 — must
-	// override.
+	// G2MSM at k=1, 2, 5. Formula: k * 22500 * G2_discount(k) / 1000.
+	// Pectra-final G2 discount table (distinct from G1's):
+	// discount(1)=1000, discount(2)=1000, discount(5)=855.
+	// Pectra base is 22500; libevm draft G2MUL base is 55000.
 	g2MSM := precompiledContractsBLS12381[BLS12381G2MSMAddress]
 	g2MSMCases := []struct {
 		k       uint64
 		wantGas uint64
 	}{
-		{1, (1 * 22500 * 1200) / 1000},
-		{2, (2 * 22500 * 888) / 1000},
-		{5, (5 * 22500 * 594) / 1000},
+		{1, (1 * 22500 * 1000) / 1000},
+		{2, (2 * 22500 * 1000) / 1000},
+		{5, (5 * 22500 * 855) / 1000},
 	}
 	for _, c := range g2MSMCases {
 		t.Run("G2MSM/gas/k="+itoa(c.k), func(t *testing.T) {
