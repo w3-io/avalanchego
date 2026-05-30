@@ -27,7 +27,24 @@ cd "${REPO_ROOT}"
 # avalanche-cli versions its plugins by subnet-evm release tag.
 # We install under our own w3-tagged directory so the upstream
 # binary at the standard path is not touched.
-readonly W3_TAG="$(git describe --tags --abbrev=0 --match='v*-w3.*' 2>/dev/null || echo 'v0.0.0-w3.dev')"
+# Resolve the w3 tag from (in order): explicit env override, an
+# exact tag on the current commit, then fall back to the closest
+# w3 tag. The exact-tag check matters because callers (like the
+# contracts repo's w3-devnet.sh) check out a specific tag and
+# expect the installed binary to land at the path that tag names.
+# If we fell back to `git describe --abbrev=0` here and the user
+# was on a commit that wasn't itself tagged, the caller would
+# look under one tag's path and find a binary under another's.
+if [[ -n "${W3_FORK_TAG:-}" ]]; then
+    W3_TAG="${W3_FORK_TAG}"
+elif W3_TAG="$(git describe --tags --exact-match --match='v*-w3.*' 2>/dev/null)"; then
+    :
+else
+    echo "error: current HEAD is not on a v*-w3.* tag and W3_FORK_TAG is not set." >&2
+    echo "       Either checkout a tagged commit or pass W3_FORK_TAG=v1.14.2-w3.N" >&2
+    exit 64
+fi
+readonly W3_TAG
 readonly INSTALL_DIR="${HOME}/.avalanche-cli/bin/subnet-evm/subnet-evm-${W3_TAG}"
 readonly INSTALL_BIN="${INSTALL_DIR}/subnet-evm"
 
