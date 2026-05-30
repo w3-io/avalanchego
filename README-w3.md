@@ -40,7 +40,18 @@ If a modification is needed that ISN'T EIP-2537 (or its eventual generalization 
 | `v1.14.0`, `v1.14.1`, ... | Upstream tags, unchanged |
 | `v1.14.2-w3.1`, `v1.14.2-w3.2`, ... | Our releases — upstream base + EIP-2537 |
 
-`infrastructure/` deploys pin a specific `vX.Y.Z-w3.N` tag. The first such tag will be cut when EIP-2537 work (Linear W3-713) lands.
+`infrastructure/` deploys pin a specific `vX.Y.Z-w3.N` tag.
+
+### Tag integrity policy
+
+w3 release tags are **annotated** (`git tag -a`) so they carry a description and are immutable as objects, but they're **not GPG-signed** in this repo's current configuration. To detect tag tampering, every consumer that builds from a w3 tag also pins the underlying commit SHA and refuses to build if `git rev-parse HEAD` after checkout doesn't match the pinned SHA.
+
+- `w3-io/contracts` `script/w3-devnet.sh` enforces this via `W3_FORK_TAG` + `W3_FORK_COMMIT_SHA` constants at the top of the script.
+- `w3-io/infrastructure` Pulumi configs do the equivalent at deploy time.
+
+Bumping a w3 tag requires updating BOTH the tag name AND the pinned SHA in every consumer. There's no "auto-track latest" path.
+
+Production deploy procedure also runs `go mod verify` against the module cache before compilation, catching any tampered dependencies that go.sum's transitive trust would otherwise let through silently.
 
 ## Planned w3 modifications
 

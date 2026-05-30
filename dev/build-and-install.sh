@@ -62,6 +62,22 @@ fi
 echo "w3-fork build: tag=${W3_TAG}"
 echo "w3-fork build: source=${REPO_ROOT}"
 
+# Module integrity: verify every dependency in the module cache
+# matches its go.sum hash before we let `go build` resolve them.
+# `go mod verify` is the cheap-but-effective check; it catches
+# corrupted or tampered module cache entries that go.sum's
+# transitive trust would otherwise let through silently.
+#
+# We also export GOFLAGS=-mod=readonly so the build can't silently
+# add or modify dependencies (a build that would otherwise be
+# tempted to fetch a missing module fails loudly).
+echo "w3-fork build: verifying module cache integrity"
+if ! ( cd "${REPO_ROOT}" && go mod verify ); then
+    echo "error: go mod verify failed — refusing to build" >&2
+    exit 65
+fi
+export GOFLAGS="${GOFLAGS:+${GOFLAGS} }-mod=readonly"
+
 cd "${REPO_ROOT}/graft/subnet-evm"
 
 echo "w3-fork build: compiling subnet-evm plugin (~30s)"
