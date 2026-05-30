@@ -231,6 +231,11 @@ type VM struct {
 
 	clock *mockable.Clock
 
+	// w3-io fork: when initial-clock-time is set, this controller
+	// owns the clock and advances it at real-wall-time rate from
+	// the configured base. nil otherwise.
+	stagingClock *stagingClockController
+
 	shutdownChan chan struct{}
 	shutdownWg   sync.WaitGroup
 
@@ -289,6 +294,21 @@ func (vm *VM) Initialize(
 	vm.extensionConfig = defaultExtensions()
 	// Get clock from extension config
 	vm.clock = vm.extensionConfig.Clock
+
+	// w3-io fork: when `initial-clock-time` is set, override the
+	// VM's wall clock to that past timestamp and start a goroutine
+	// that advances the clock at real-wall-time rate from there.
+	// Without the goroutine the clock would freeze (mockable.Clock
+	// doesn't auto-advance once Set), preventing bootstrap blocks
+	// from being produced at all.
+	//
+	// stage_setClock (when called from the RPC) re-bases the clock
+	// to the given timestamp; the goroutine continues advancing
+	// from the new base. stage_syncClock stops the goroutine and
+	// returns to real wall time.
+	if vm.config.InitialClockTime != nil {
+		startStagingClock(vm, *vm.config.InitialClockTime)
+	}
 
 	vm.ctx = chainCtx
 
@@ -1187,6 +1207,17 @@ func (vm *VM) CreateHandlers(context.Context) (map[string]http.Handler, error) {
 			return nil, err
 		}
 		enabledAPIs = append(enabledAPIs, "warp")
+	}
+
+	// w3-io fork: "stage" namespace for bootstrap/manufacturing tooling.
+	// See graft/subnet-evm/plugin/evm/stage_api.go. Enabled via "stage-api-enabled" config.
+	// Defaults off — never exposed on production subnets.
+	if vm.config.StageAPIEnabled {
+		if err := handler.RegisterName("stage", NewStageAPI(vm)); err != nil {
+			return nil, err
+		}
+		enabledAPIs = append(enabledAPIs, "stage")
+		log.Warn("stage API enabled — DO NOT use in production; exposes clock manipulation")
 	}
 
 	log.Info("enabling apis",

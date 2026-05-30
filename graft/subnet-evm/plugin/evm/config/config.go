@@ -37,6 +37,21 @@ type Config struct {
 	AdminAPIDir          string `json:"admin-api-dir"`
 	WarpAPIEnabled       bool   `json:"warp-api-enabled"`
 
+	// StageAPIEnabled exposes the "stage" RPC namespace, which allows
+	// tests and bootstrap tooling to override the node's wall clock
+	// (stage_setClock / stage_syncClock). Defaults to false — the
+	// namespace is NEVER exposed on production subnets. w3-io fork.
+	StageAPIEnabled bool `json:"stage-api-enabled"`
+
+	// InitialClockTime, when set, overrides the VM's wall clock at
+	// VM initialization to this unix-seconds timestamp. Every block
+	// the node produces — bootstrap blocks included — will be
+	// stamped at or after this time. Used by manufacturing/staging
+	// tooling to put the entire chain history in the past so a
+	// later `stage_syncClock` call cleanly advances to real wall
+	// time. Defaults to nil (use real wall clock). w3-io fork.
+	InitialClockTime *uint64 `json:"initial-clock-time,omitempty"`
+
 	// EnabledEthAPIs is a list of Ethereum services that should be enabled
 	// If none is specified, then we use the default list [defaultEnabledAPIs]
 	EnabledEthAPIs []string `json:"eth-apis"`
