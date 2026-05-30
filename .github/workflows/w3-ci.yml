@@ -52,7 +52,7 @@ jobs:
         run: go vet ./...
 
   test-eip2537:
-    name: graft/subnet-evm/core/vm EIP-2537 tests
+    name: graft/subnet-evm/params EIP-2537 tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -62,11 +62,11 @@ jobs:
           go-version-file: go.mod
           cache: true
       - working-directory: graft/subnet-evm
-        # Test only core/vm — that's where our EIP-2537 wiring
-        # lives. Full test suite is exercised by upstream CI on
-        # ava-labs/avalanchego master and re-running it here
-        # burns minutes for no marginal signal.
-        run: go test -short -count=1 ./core/vm/...
+        # Test only params/ — that's where our EIP-2537 wiring
+        # lives (libevm hooks registering BLS precompiles at
+        # Pectra-final addresses). Full test suite is exercised
+        # by upstream CI on ava-labs/avalanchego master.
+        run: go test -short -count=1 ./params/...
 
   divergence-check:
     name: Verify only EIP-2537 paths are modified
@@ -94,8 +94,8 @@ jobs:
           echo ""
           for f in $changed_files; do
             case "$f" in
-              graft/subnet-evm/core/vm/contracts.go) ;;
-              graft/subnet-evm/core/vm/contracts_eip2537*.go) ;;
+              graft/subnet-evm/params/hooks_libevm.go) ;;
+              graft/subnet-evm/params/precompiles_eip2537*.go) ;;
               graft/subnet-evm/params/protocol_params.go) ;;
               .github/workflows/w3-ci.yml) ;;
               README-w3.md) ;;

@@ -78,10 +78,16 @@ func (r RulesExtra) ActivePrecompiles(existing []common.Address) []common.Addres
 }
 
 func (r RulesExtra) currentPrecompiles() map[common.Address]vm.PrecompiledContract {
-	if r.IsGranite {
-		return PrecompiledContractsGranite
+	if !r.IsGranite {
+		return nil
 	}
-	return nil
+	// w3-io: EIP-2537 BLS12-381 precompiles share Granite's
+	// activation. See params/precompiles_eip2537.go for the
+	// wiring rationale.
+	combined := make(map[common.Address]vm.PrecompiledContract, len(PrecompiledContractsGranite)+len(PrecompiledContractsBLS12381))
+	maps.Copy(combined, PrecompiledContractsGranite)
+	maps.Copy(combined, PrecompiledContractsBLS12381)
+	return combined
 }
 
 // precompileOverrideBuiltin specifies precompiles that were activated prior to the
