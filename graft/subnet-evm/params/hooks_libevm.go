@@ -70,6 +70,32 @@ var PrecompiledContractsGranite = map[common.Address]vm.PrecompiledContract{
 	P256VerifyAddress: &vm.P256Verify{},
 }
 
+// graniteAndBLSMerged is the cached union of PrecompiledContractsGranite
+// and precompiledContractsBLS12381, built once at init. currentPrecompiles
+// returns this shared map directly (no per-call allocation or merge).
+//
+// Building it at init also lets us hard-fail node startup if anyone
+// adds a precompile to either map at an address that collides with
+// the other — silent overwrite via maps.Copy would be a footgun
+// once we have more than the two current contributors.
+var graniteAndBLSMerged map[common.Address]vm.PrecompiledContract
+
+func init() {
+	graniteAndBLSMerged = make(
+		map[common.Address]vm.PrecompiledContract,
+		len(PrecompiledContractsGranite)+len(precompiledContractsBLS12381),
+	)
+	for addr, impl := range PrecompiledContractsGranite {
+		graniteAndBLSMerged[addr] = impl
+	}
+	for addr, impl := range precompiledContractsBLS12381 {
+		if _, collision := graniteAndBLSMerged[addr]; collision {
+			panic("w3 precompile wiring: Granite and BLS maps both define address " + addr.Hex())
+		}
+		graniteAndBLSMerged[addr] = impl
+	}
+}
+
 func (r RulesExtra) ActivePrecompiles(existing []common.Address) []common.Address {
 	var addresses []common.Address
 	addresses = slices.AppendSeq(addresses, maps.Keys(r.currentPrecompiles()))
@@ -81,13 +107,10 @@ func (r RulesExtra) currentPrecompiles() map[common.Address]vm.PrecompiledContra
 	if !r.IsGranite {
 		return nil
 	}
-	// w3-io: EIP-2537 BLS12-381 precompiles share Granite's
-	// activation. See params/precompiles_eip2537.go for the
-	// wiring rationale.
-	combined := make(map[common.Address]vm.PrecompiledContract, len(PrecompiledContractsGranite)+len(PrecompiledContractsBLS12381))
-	maps.Copy(combined, PrecompiledContractsGranite)
-	maps.Copy(combined, PrecompiledContractsBLS12381)
-	return combined
+	// Shared cached map, built once in init. See graniteAndBLSMerged
+	// for the disjoint-key invariant and the BLS wiring rationale in
+	// params/precompiles_eip2537.go.
+	return graniteAndBLSMerged
 }
 
 // precompileOverrideBuiltin specifies precompiles that were activated prior to the

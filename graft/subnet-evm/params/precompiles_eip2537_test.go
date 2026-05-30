@@ -66,20 +66,20 @@ func TestPrecompiledContractsBLS12381_AddressScheme(t *testing.T) {
 		BLS12381MapFp2ToG2Addr: "MAP_FP2_TO_G2",
 	}
 
-	if got, want := len(PrecompiledContractsBLS12381), len(expected); got != want {
-		t.Fatalf("PrecompiledContractsBLS12381 size = %d, want %d", got, want)
+	if got, want := len(precompiledContractsBLS12381), len(expected); got != want {
+		t.Fatalf("precompiledContractsBLS12381 size = %d, want %d", got, want)
 	}
 	for addr, name := range expected {
-		if _, ok := PrecompiledContractsBLS12381[addr]; !ok {
+		if _, ok := precompiledContractsBLS12381[addr]; !ok {
 			t.Errorf("missing %s at address %s", name, addr.Hex())
 		}
 	}
-	for addr := range PrecompiledContractsBLS12381 {
+	for addr := range precompiledContractsBLS12381 {
 		if _, ok := expected[addr]; !ok {
 			t.Errorf("unexpected precompile at address %s", addr.Hex())
 		}
 	}
-	for addr := range PrecompiledContractsBLS12381 {
+	for addr := range precompiledContractsBLS12381 {
 		lastByte := addr.Bytes()[len(addr.Bytes())-1]
 		if lastByte < 0x0b || lastByte > 0x11 {
 			t.Errorf("BLS precompile at %s outside Pectra-final EIP-2537 range 0x0b-0x11", addr.Hex())
@@ -114,7 +114,7 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 	}
 	for _, c := range fixedCases {
 		t.Run(c.name+"/gas", func(t *testing.T) {
-			impl := PrecompiledContractsBLS12381[c.addr]
+			impl := precompiledContractsBLS12381[c.addr]
 			got := impl.RequiredGas(c.input)
 			if got != c.wantGas {
 				t.Errorf("%s.RequiredGas = %d, want Pectra-final %d (libevm draft would be %d)",
@@ -126,7 +126,7 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 	// G1MSM at k=1, 2, 5. Formula: k * 12000 * discount(k) / 1000.
 	// Discount table indices are 0-based on k, so discount(k) is
 	// table[k-1]: discount(1)=1200, discount(2)=888, discount(5)=594.
-	g1MSM := PrecompiledContractsBLS12381[BLS12381G1MSMAddress]
+	g1MSM := precompiledContractsBLS12381[BLS12381G1MSMAddress]
 	g1MSMCases := []struct {
 		k       uint64
 		wantGas uint64
@@ -147,7 +147,7 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 	// G2MSM at k=1, 2, 5. Formula: k * 22500 * discount(k) / 1000.
 	// Pectra base is 22500; libevm draft G2MUL base is 55000 — must
 	// override.
-	g2MSM := PrecompiledContractsBLS12381[BLS12381G2MSMAddress]
+	g2MSM := precompiledContractsBLS12381[BLS12381G2MSMAddress]
 	g2MSMCases := []struct {
 		k       uint64
 		wantGas uint64
@@ -167,7 +167,7 @@ func TestPrecompiledContractsBLS12381_PectraGasCosts(t *testing.T) {
 
 	// PAIRING_CHECK at k=1, 2, 4. Formula: 37700 + 32600*k.
 	// Pectra: base 37700, per-pair 32600. libevm: 115000 + 23000*k.
-	pairing := PrecompiledContractsBLS12381[BLS12381PairingAddress]
+	pairing := precompiledContractsBLS12381[BLS12381PairingAddress]
 	pairingCases := []struct {
 		k       uint64
 		wantGas uint64
@@ -218,7 +218,7 @@ func TestPrecompiledContractsBLS12381_ParityWithLibevm(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			pectraImpl, ok := PrecompiledContractsBLS12381[c.pectraAddr]
+			pectraImpl, ok := precompiledContractsBLS12381[c.pectraAddr]
 			if !ok {
 				t.Fatalf("no precompile wired at %s", c.pectraAddr.Hex())
 			}
@@ -264,7 +264,7 @@ func TestPrecompiledContractsBLS12381_RejectsBadInputLength(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			impl := PrecompiledContractsBLS12381[c.addr]
+			impl := precompiledContractsBLS12381[c.addr]
 			if _, err := impl.Run(c.bad); err == nil {
 				t.Errorf("%s: expected error on bad input length, got nil", c.name)
 			}
@@ -285,7 +285,7 @@ func TestPrecompiledContractsBLS12381_RejectsBadInputLength(t *testing.T) {
 // ---------------------------------------------------------------
 
 func TestPrecompiledContractsBLS12381_AcceptsIdentityG1(t *testing.T) {
-	impl := PrecompiledContractsBLS12381[BLS12381G1AddAddress]
+	impl := precompiledContractsBLS12381[BLS12381G1AddAddress]
 	zero := make([]byte, g1PointBytes)
 	input := append(append([]byte{}, zero...), zero...)
 	out, err := impl.Run(input)
@@ -298,7 +298,7 @@ func TestPrecompiledContractsBLS12381_AcceptsIdentityG1(t *testing.T) {
 }
 
 func TestPrecompiledContractsBLS12381_AcceptsIdentityG2(t *testing.T) {
-	impl := PrecompiledContractsBLS12381[BLS12381G2AddAddress]
+	impl := precompiledContractsBLS12381[BLS12381G2AddAddress]
 	zero := make([]byte, g2PointBytes)
 	input := append(append([]byte{}, zero...), zero...)
 	out, err := impl.Run(input)

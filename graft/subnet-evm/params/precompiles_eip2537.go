@@ -308,13 +308,13 @@ func msmGasCost(k, perPair uint64) uint64 {
 // Map (built at init)
 // ---------------------------------------------------------------
 
-// PrecompiledContractsBLS12381 wires each Pectra-final EIP-2537
+// precompiledContractsBLS12381 wires each Pectra-final EIP-2537
 // address to a shim that enforces Pectra gas + subgroup checks
 // over libevm's BLS implementation.
 //
 // Built at init time so we hard-fail at startup if libevm ever
 // drops or moves one of the underlying implementations.
-var PrecompiledContractsBLS12381 map[common.Address]vm.PrecompiledContract
+var precompiledContractsBLS12381 map[common.Address]vm.PrecompiledContract
 
 func init() {
 	lookup := func(libevmAddr common.Address, name string) vm.PrecompiledContract {
@@ -325,7 +325,7 @@ func init() {
 		return impl
 	}
 
-	PrecompiledContractsBLS12381 = map[common.Address]vm.PrecompiledContract{
+	precompiledContractsBLS12381 = map[common.Address]vm.PrecompiledContract{
 		BLS12381G1AddAddress:   &pectraG1Add{inner: lookup(libevmBLSG1AddDraftAddr, "BLS12_G1ADD")},
 		BLS12381G1MSMAddress:   &pectraG1MSM{inner: lookup(libevmBLSG1MultiExpDraftAddr, "BLS12_G1MSM")},
 		BLS12381G2AddAddress:   &pectraG2Add{inner: lookup(libevmBLSG2AddDraftAddr, "BLS12_G2ADD")},

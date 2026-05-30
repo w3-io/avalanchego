@@ -120,7 +120,7 @@ func loadNegative(t *testing.T, raw []byte) []negativeVector {
 // ---------------------------------------------------------------
 
 func runPositiveSuite(t *testing.T, addr common.Address, raw []byte) {
-	impl := PrecompiledContractsBLS12381[addr]
+	impl := precompiledContractsBLS12381[addr]
 	vectors := loadPositive(t, raw)
 	for _, v := range vectors {
 		v := v
@@ -188,7 +188,7 @@ func TestVectors_Positive_MapFp2ToG2(t *testing.T) {
 // ---------------------------------------------------------------
 
 func runNegativeSuite(t *testing.T, addr common.Address, raw []byte) {
-	impl := PrecompiledContractsBLS12381[addr]
+	impl := precompiledContractsBLS12381[addr]
 	vectors := loadNegative(t, raw)
 	for _, v := range vectors {
 		v := v
@@ -308,7 +308,7 @@ func TestSubgroupRejection_G1ADD(t *testing.T) {
 	bad := nonSubgroupG1(t)
 	identity := make([]byte, g1PointBytes)
 	input := append(append([]byte{}, bad...), identity...)
-	impl := PrecompiledContractsBLS12381[BLS12381G1AddAddress]
+	impl := precompiledContractsBLS12381[BLS12381G1AddAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected G1ADD to reject non-subgroup G1 input, got nil error")
@@ -322,7 +322,7 @@ func TestSubgroupRejection_G1MSM(t *testing.T) {
 	bad := nonSubgroupG1(t)
 	scalar := scalar1()
 	input := append(append([]byte{}, bad...), scalar...)
-	impl := PrecompiledContractsBLS12381[BLS12381G1MSMAddress]
+	impl := precompiledContractsBLS12381[BLS12381G1MSMAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected G1MSM to reject non-subgroup G1 input, got nil error")
@@ -336,7 +336,7 @@ func TestSubgroupRejection_G2ADD(t *testing.T) {
 	bad := nonSubgroupG2(t)
 	identity := make([]byte, g2PointBytes)
 	input := append(append([]byte{}, bad...), identity...)
-	impl := PrecompiledContractsBLS12381[BLS12381G2AddAddress]
+	impl := precompiledContractsBLS12381[BLS12381G2AddAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected G2ADD to reject non-subgroup G2 input, got nil error")
@@ -350,7 +350,7 @@ func TestSubgroupRejection_G2MSM(t *testing.T) {
 	bad := nonSubgroupG2(t)
 	scalar := scalar1()
 	input := append(append([]byte{}, bad...), scalar...)
-	impl := PrecompiledContractsBLS12381[BLS12381G2MSMAddress]
+	impl := precompiledContractsBLS12381[BLS12381G2MSMAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected G2MSM to reject non-subgroup G2 input, got nil error")
@@ -364,7 +364,7 @@ func TestSubgroupRejection_Pairing_G1(t *testing.T) {
 	bad := nonSubgroupG1(t)
 	g2 := g2Generator(t)
 	input := append(append([]byte{}, bad...), g2...)
-	impl := PrecompiledContractsBLS12381[BLS12381PairingAddress]
+	impl := precompiledContractsBLS12381[BLS12381PairingAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected PAIRING to reject non-subgroup G1 input, got nil error")
@@ -378,7 +378,7 @@ func TestSubgroupRejection_Pairing_G2(t *testing.T) {
 	g1 := g1Generator(t)
 	bad := nonSubgroupG2(t)
 	input := append(append([]byte{}, g1...), bad...)
-	impl := PrecompiledContractsBLS12381[BLS12381PairingAddress]
+	impl := precompiledContractsBLS12381[BLS12381PairingAddress]
 	_, err := impl.Run(input)
 	if err == nil {
 		t.Fatal("expected PAIRING to reject non-subgroup G2 input, got nil error")
