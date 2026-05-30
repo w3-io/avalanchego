@@ -1,0 +1,113 @@
+name: w3 CI
+
+# CI for the w3-io fork of ava-labs/avalanchego. Runs only on our
+# w3/* branches; upstream master is left alone so we don't burn
+# CI minutes re-running ava-labs' own tests.
+#
+# This workflow is intentionally additive — it does NOT replace
+# upstream's CI, just adds w3-specific verification.
+
+on:
+  push:
+    branches:
+      - 'w3/**'
+  pull_request:
+    branches:
+      - 'w3/**'
+
+jobs:
+  build:
+    name: Build avalanchego + subnet-evm plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build avalanchego
+        run: |
+          go build -o /tmp/avalanchego ./main
+
+      - name: Build graft/subnet-evm plugin
+        working-directory: graft/subnet-evm
+        run: |
+          go build -o /tmp/subnet-evm ./plugin
+
+  vet:
+    name: go vet on graft/subnet-evm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - working-directory: graft/subnet-evm
+        run: go vet ./...
+
+  test-eip2537:
+    name: graft/subnet-evm/core/vm EIP-2537 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - working-directory: graft/subnet-evm
+        # Test only core/vm — that's where our EIP-2537 wiring
+        # lives. Full test suite is exercised by upstream CI on
+        # ava-labs/avalanchego master and re-running it here
+        # burns minutes for no marginal signal.
+        run: go test -short -count=1 ./core/vm/...
+
+  divergence-check:
+    name: Verify only EIP-2537 paths are modified
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Diff vs. upstream
+        run: |
+          # Whitelist of paths the w3 fork may touch. Any commit on
+          # w3/staging that touches a file outside this list fails
+          # this check — keeps the fork's surface intentionally
+          # small and easy to rebase against upstream.
+          #
+          # Scope: EIP-2537 wiring only. Anything else (manufacturing
+          # tooling, stage APIs, clock manipulation) belongs in
+          # w3-io/staging patches, NOT here.
+          git remote add upstream https://github.com/ava-labs/avalanchego.git || true
+          git fetch upstream master --depth=1
+          changed_files=$(git diff --name-only upstream/master)
+          echo "Files changed vs upstream/master:"
+          echo "$changed_files"
+          echo ""
+          for f in $changed_files; do
+            case "$f" in
+              graft/subnet-evm/core/vm/contracts.go) ;;
+              graft/subnet-evm/core/vm/contracts_eip2537*.go) ;;
+              graft/subnet-evm/params/protocol_params.go) ;;
+              .github/workflows/w3-ci.yml) ;;
+              README-w3.md) ;;
+              dev/*) ;;
+              *)
+                echo "ERROR: file '$f' is outside the w3 fork's whitelist."
+                echo "Only EIP-2537 wiring is allowed in this fork."
+                echo "Manufacturing-only changes belong in w3-io/staging."
+                echo "If this change is genuinely EIP-2537 related, update the"
+                echo "whitelist in .github/workflows/w3-ci.yml first."
+                exit 1
+                ;;
+            esac
+          done
+          echo "All changes within whitelist."
