@@ -157,19 +157,30 @@ func (p *postForkCommonComponents) Verify(
 			)
 		}
 
-		var shouldHaveProposer bool
-		if p.vm.Upgrades.IsDurangoActivated(parentTimestamp) {
-			shouldHaveProposer, err = p.verifyPostDurangoBlockDelay(ctx, parentTimestamp, parentPChainHeight, child)
-		} else {
-			shouldHaveProposer, err = p.verifyPreDurangoBlockDelay(ctx, parentTimestamp, parentPChainHeight, child)
-		}
-		if err != nil {
-			return err
-		}
+		// w3-io staging: skip proposer-window verification for
+		// blocks whose timestamp is in the past relative to real
+		// wall time. Manufacturing produces blocks at simulated
+		// past timestamps (months to years before now) for which
+		// proposer scheduling is irrelevant — there are no
+		// validator slots to enforce against in the past. The
+		// rest of the post-fork verification (parent-timestamp
+		// ordering, max-future-skew, P-chain height bounds)
+		// still runs above this block.
+		if !childTimestamp.Before(time.Now()) {
+			var shouldHaveProposer bool
+			if p.vm.Upgrades.IsDurangoActivated(parentTimestamp) {
+				shouldHaveProposer, err = p.verifyPostDurangoBlockDelay(ctx, parentTimestamp, parentPChainHeight, child)
+			} else {
+				shouldHaveProposer, err = p.verifyPreDurangoBlockDelay(ctx, parentTimestamp, parentPChainHeight, child)
+			}
+			if err != nil {
+				return err
+			}
 
-		hasProposer := child.SignedBlock.Proposer() != ids.EmptyNodeID
-		if shouldHaveProposer != hasProposer {
-			return fmt.Errorf("%w: shouldHaveProposer (%v) != hasProposer (%v)", errProposerMismatch, shouldHaveProposer, hasProposer)
+			hasProposer := child.SignedBlock.Proposer() != ids.EmptyNodeID
+			if shouldHaveProposer != hasProposer {
+				return fmt.Errorf("%w: shouldHaveProposer (%v) != hasProposer (%v)", errProposerMismatch, shouldHaveProposer, hasProposer)
+			}
 		}
 
 		p.vm.ctx.Log.Debug("verified post-fork block",
