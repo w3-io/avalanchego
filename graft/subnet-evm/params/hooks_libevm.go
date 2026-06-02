@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math/big"
 	"slices"
+	"sync"
 
 	"github.com/ava-labs/libevm/common"
 	"github.com/ava-labs/libevm/core/vm"
@@ -71,29 +72,43 @@ var PrecompiledContractsGranite = map[common.Address]vm.PrecompiledContract{
 }
 
 // graniteAndBLSMerged is the cached union of PrecompiledContractsGranite
-// and precompiledContractsBLS12381, built once at init. currentPrecompiles
-// returns this shared map directly (no per-call allocation or merge).
+// and precompiledContractsBLS12381. currentPrecompiles returns this
+// shared map directly (no per-call allocation or merge after the first
+// call).
 //
-// Building it at init also lets us hard-fail node startup if anyone
-// adds a precompile to either map at an address that collides with
-// the other — silent overwrite via maps.Copy would be a footgun
-// once we have more than the two current contributors.
-var graniteAndBLSMerged map[common.Address]vm.PrecompiledContract
+// Built lazily on first use rather than in init() because the BLS map
+// (precompiles_eip2537.go) is itself populated from an init() — and
+// Go init order within a package follows source-file lex order, which
+// is not the order we need here. An init() in this file would observe
+// the BLS map as still-nil and silently produce a merged map missing
+// every BLS address, with no test coverage to catch it. Lazy
+// initialization sidesteps the ordering invariant entirely.
+//
+// The merge step also hard-fails on address collisions; doing it here
+// instead of at init keeps that invariant in place.
+var (
+	graniteAndBLSOnce   sync.Once
+	graniteAndBLSMerged map[common.Address]vm.PrecompiledContract
+)
 
-func init() {
-	graniteAndBLSMerged = make(
-		map[common.Address]vm.PrecompiledContract,
-		len(PrecompiledContractsGranite)+len(precompiledContractsBLS12381),
-	)
-	for addr, impl := range PrecompiledContractsGranite {
-		graniteAndBLSMerged[addr] = impl
-	}
-	for addr, impl := range precompiledContractsBLS12381 {
-		if _, collision := graniteAndBLSMerged[addr]; collision {
-			panic("w3 precompile wiring: Granite and BLS maps both define address " + addr.Hex())
+func graniteAndBLSPrecompiles() map[common.Address]vm.PrecompiledContract {
+	graniteAndBLSOnce.Do(func() {
+		merged := make(
+			map[common.Address]vm.PrecompiledContract,
+			len(PrecompiledContractsGranite)+len(precompiledContractsBLS12381),
+		)
+		for addr, impl := range PrecompiledContractsGranite {
+			merged[addr] = impl
 		}
-		graniteAndBLSMerged[addr] = impl
-	}
+		for addr, impl := range precompiledContractsBLS12381 {
+			if _, collision := merged[addr]; collision {
+				panic("w3 precompile wiring: Granite and BLS maps both define address " + addr.Hex())
+			}
+			merged[addr] = impl
+		}
+		graniteAndBLSMerged = merged
+	})
+	return graniteAndBLSMerged
 }
 
 func (r RulesExtra) ActivePrecompiles(existing []common.Address) []common.Address {
@@ -107,10 +122,8 @@ func (r RulesExtra) currentPrecompiles() map[common.Address]vm.PrecompiledContra
 	if !r.IsGranite {
 		return nil
 	}
-	// Shared cached map, built once in init. See graniteAndBLSMerged
-	// for the disjoint-key invariant and the BLS wiring rationale in
-	// params/precompiles_eip2537.go.
-	return graniteAndBLSMerged
+	// Shared cached map; merge runs once on first call.
+	return graniteAndBLSPrecompiles()
 }
 
 // precompileOverrideBuiltin specifies precompiles that were activated prior to the
